@@ -1,7 +1,7 @@
 const socket=io();
 const $=id=>document.getElementById(id);
 const lobby=$("lobby"),game=$("game"),canvas=$("arena"),ctx=canvas.getContext("2d");
-let myId=null,roomCode="",players=[],powerups=[],status="waiting",event="normal",eventText="AGUARDANDO",lavaY=1200,knockX=0,knockY=0,lastPush=0,spectateId=null,airJumpUsed=false;
+let myId=null,roomCode="",players=[],powerups=[],status="waiting",event="normal",eventText="AGUARDANDO",lavaY=1200,knockX=0,knockY=0,lastPush=0,spectateId=null,airJumpUsed=false,jumpQueued=false;
 let keys={},x=180,y=930,vx=0,vy=0,grounded=false,lastSent=0,camX=0,camY=0;
 const WORLD_W=1800,WORLD_H=1200;
 const platforms=[
@@ -28,7 +28,7 @@ $("startBtn").onclick=()=>{const solo=players.length===1;socket.emit("startRound
 function push(){if(status!=="playing"||!players.find(p=>p.id===myId)?.alive)return;const now=Date.now();if(now-lastPush<650)return;lastPush=now;socket.emit("push");}
 $("touchPush").addEventListener("pointerdown",e=>{e.preventDefault();push();});
 window.addEventListener("keydown",e=>{if(e.key.toLowerCase()==="f"&&!e.repeat)push();});
-function bindTouch(id,key){const el=$(id);if(!el)return;const down=e=>{e.preventDefault();keys[key]=true;el.setPointerCapture?.(e.pointerId);};const up=e=>{e.preventDefault();keys[key]=false;};el.addEventListener("pointerdown",down);["pointerup","pointercancel","lostpointercapture","pointerleave"].forEach(type=>el.addEventListener(type,up));}
+function bindTouch(id,key){const el=$(id);if(!el)return;const down=e=>{e.preventDefault();if(key===" "&&!keys[key])jumpQueued=true;keys[key]=true;el.setPointerCapture?.(e.pointerId);};const up=e=>{e.preventDefault();keys[key]=false;};el.addEventListener("pointerdown",down);["pointerup","pointercancel","lostpointercapture","pointerleave"].forEach(type=>el.addEventListener(type,up));}
 bindTouch("touchLeft","a");bindTouch("touchRight","d");bindTouch("touchJump"," ");
 socket.on("connect",()=>myId=socket.id);
 socket.on("connect_error",()=>{$("lobbyError").textContent="Não foi possível conectar ao servidor.";});
@@ -36,12 +36,12 @@ socket.on("state",s=>{players=s.players;powerups=s.powerups||[];status=s.status;
 socket.on("notice",toast);
 socket.on("knockback",k=>{knockX+=k.vx;knockY=Math.min(knockY,k.vy);toast("Você levou um empurrão!");});
 function renderPlayers(){$("players").innerHTML="";players.forEach(p=>{const li=document.createElement("li"),dot=document.createElement("i"),span=document.createElement("span"),em=document.createElement("em");dot.className="dot";dot.style.background=p.color;span.textContent=p.name+(p.id===myId?" (você)":"");em.textContent=p.alive?"VIVO":"ELIMINADO";li.append(dot,span,em);$("players").append(li);});}
-window.addEventListener("keydown",e=>{if(["ArrowLeft","ArrowRight","ArrowUp"," "].includes(e.key))e.preventDefault();keys[e.key.toLowerCase()]=true;});
+window.addEventListener("keydown",e=>{if(["ArrowLeft","ArrowRight","ArrowUp"," "].includes(e.key))e.preventDefault();const k=e.key.toLowerCase();if([" ","w","arrowup"].includes(k)&&!keys[k])jumpQueued=true;keys[k]=true;});
 window.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 function moverRect(m,t){const pace=event==="fast"?2.4:1;return {x:m.x+Math.sin(t/(900/pace)+m.phase)*m.range,y:m.y,w:m.w,h:m.h};}
 function update(dt){if(status!=="playing")return;const me=players.find(p=>p.id===myId);if(!me)return;if(!me.alive){const target=players.find(p=>p.id===spectateId&&p.alive)||players.find(p=>p.alive);if(target){const tx=Math.max(0,Math.min(WORLD_W-canvas.width,target.x-canvas.width/2)),ty=Math.max(0,Math.min(WORLD_H-canvas.height,target.y-canvas.height/2));camX+=(tx-camX)*Math.min(1,dt*4);camY+=(ty-camY)*Math.min(1,dt*4);}return;}const boosted=me.power==="speed"&&me.powerUntil>Date.now(),jumpBoost=me.power==="jump"&&me.powerUntil>Date.now();const speed=boosted?390:285;
  if(keys.a||keys.arrowleft)vx=event==="ice"?vx+(-speed-vx)*Math.min(1,dt*5):-speed;else if(keys.d||keys.arrowright)vx=event==="ice"?vx+(speed-vx)*Math.min(1,dt*5):speed;else vx*=Math.pow(event==="ice"?.35:.001,dt);
- if((keys[" "]||keys.w||keys.arrowup)&&grounded){const jumpForce=jumpBoost?(event==="low"?1050:820):(event==="low"?760:610);vy=-jumpForce;grounded=false;airJumpUsed=false}else if((keys[" "]||keys.w||keys.arrowup)&&event==="double"&&!airJumpUsed){vy=-720;airJumpUsed=true}
+ if(jumpQueued&&grounded){const jumpForce=jumpBoost?(event==="low"?1050:820):(event==="low"?760:610);vy=-jumpForce;grounded=false;airJumpUsed=false}else if(jumpQueued&&event==="double"&&!airJumpUsed){vy=-720;airJumpUsed=true}jumpQueued=false;
  vy+=(event==="low"?650:1450)*dt;x+=(vx+knockX)*dt;knockX*=Math.pow(.08,dt);vy+=knockY*dt;knockY*=Math.pow(.08,dt);if(event==="wind")x+=Math.sin(performance.now()/650)*115*dt;y+=vy*dt;grounded=false;
  const r={x:x-13,y:y-22,w:26,h:44},t=performance.now();
  for(const p of platforms){if(vy>=0&&r.x+r.w>p.x&&r.x<p.x+p.w&&r.y+r.h>=p.y&&r.y+r.h<=p.y+p.h+Math.max(12,vy*dt+4)){y=p.y-22;vy=0;grounded=true;airJumpUsed=false;}}
