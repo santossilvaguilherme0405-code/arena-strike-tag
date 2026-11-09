@@ -6,12 +6,24 @@ const platforms = [{x:0,y:485,w:960,h:35},{x:90,y:390,w:190,h:16},{x:360,y:330,w
 const name = () => $("playerName").value.trim() || "Jogador";
 function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200)}
 function enter(code){roomCode=code;lobby.classList.add("hidden");game.classList.remove("hidden");$("codeLabel").textContent=code;$("gameHint").textContent="Esperando a galera entrar..."}
-$("createBtn").onclick=()=>{ $("lobbyError").textContent="";socket.emit("createRoom",{name:name()},r=>r.ok?enter(r.code):$("lobbyError").textContent=r.error);};
-$("joinBtn").onclick=()=>{ $("lobbyError").textContent="";socket.emit("joinRoom",{name:name(),code:$("roomCode").value},r=>r.ok?enter(r.code):$("lobbyError").textContent=r.error);};
+function showLobbyError(message){$("lobbyError").textContent=message;}
+function sendRoomAction(event,data){
+  showLobbyError("");
+  if(!socket.connected){showLobbyError("Sem conexão com o servidor. Aguarde a conexão e tente novamente.");return;}
+  socket.timeout(8000).emit(event,data,(err,r)=>{
+    if(err){showLobbyError("O servidor não respondeu. Confira se o serviço do Render terminou de iniciar e tente novamente.");return;}
+    if(!r){showLobbyError("Resposta inválida do servidor. Atualize a página.");return;}
+    if(r.ok) enter(r.code); else showLobbyError(r.error||"Não foi possível entrar na sala.");
+  });
+}
+$("createBtn").onclick=()=>sendRoomAction("createRoom",{name:name()});
+$("joinBtn").onclick=()=>sendRoomAction("joinRoom",{name:name(),code:$("roomCode").value});
 $("copyBtn").onclick=()=>navigator.clipboard?.writeText(roomCode).then(()=>toast("Código copiado!")).catch(()=>toast("Código da sala: "+roomCode));
 $("leaveBtn").onclick=()=>{socket.emit("leaveRoom");game.classList.add("hidden");lobby.classList.remove("hidden");roomCode="";};
 $("startBtn").onclick=()=>socket.emit("startRound");
-socket.on("connect",()=>myId=socket.id);
+socket.on("connect",()=>{myId=socket.id;showLobbyError("");});
+socket.on("connect_error",()=>showLobbyError("Não foi possível conectar ao servidor. Verifique a publicação no Render."));
+socket.on("disconnect",()=>{myId=null;if(!game.classList.contains("hidden"))toast("Conexão perdida. Tentando reconectar...");});
 socket.on("state",s=>{players=s.players;status=s.status;timeLeft=s.timeLeft;$("playerCount").textContent=players.length+"/10";$("timer").textContent="0"+Math.floor(timeLeft/60)+":"+String(timeLeft%60).padStart(2,"0");renderPlayers();const me=players.find(p=>p.id===myId);if(me){x=me.x;y=me.y} $("startBtn").style.display=status==="playing"?"none":"block";$("startBtn").textContent=status==="finished"?"NOVA RODADA →":"COMEÇAR PARTIDA →";$("gameHint").textContent=status==="waiting"?"Aguardando o início da partida...":status==="playing"?(me?.tagger?"VOCÊ É O PEGADOR! CORRA ATRÁS!":"FUJA DO PEGADOR!"):"Rodada encerrada!";});
 socket.on("notice",toast);socket.on("tagged",p=>toast(p.name+" agora é o pegador!"));socket.on("roundOver",p=>toast(p.message));
 function renderPlayers(){$("players").innerHTML="";players.forEach(p=>{const li=document.createElement("li"),dot=document.createElement("i"),span=document.createElement("span"),em=document.createElement("em");dot.className="dot";dot.style.background=p.color;span.textContent=p.name+(p.id===myId?" (você)":"");em.textContent=p.tagger?"PEGADOR":"";li.append(dot,span,em);$("players").append(li);});}
