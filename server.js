@@ -20,7 +20,7 @@ const rand = (a,b) => Math.random() * (b-a) + a;
 
 function state(room) {
   return {
-    code: room.code, status: room.status, timeLeft: room.timeLeft,
+    code: room.code, status: room.status,
     event: room.event, eventText: room.eventText, lavaY: room.lavaY,
     players: [...room.players.values()].map(p => ({
       id:p.id,name:p.name,color:p.color,x:p.x,y:p.y,alive:p.alive,
@@ -59,8 +59,8 @@ function finishIfNeeded(room) {
 function startRound(room, soloTest = false) {
   if (room.players.size < (soloTest ? 1 : 2)) return false;
   room.soloTest = soloTest;
-  room.status = "playing"; room.timeLeft = 150; room.event = "normal";
-  room.eventText = "SOBREVIVA!"; room.lavaY = 1150; room.powerups = [];
+  room.status = "playing"; room.elapsed = 0; room.nextEvent = 18; room.event = "normal";
+  room.eventText = "SOBREVIVA!"; room.lavaY = 1200; room.powerups = [];
   let i = 0;
   for (const p of room.players.values()) {
     p.x = 180 + (i % 5) * 330; p.y = 930; p.alive = true;
@@ -69,18 +69,21 @@ function startRound(room, soloTest = false) {
   clearInterval(room.timer); clearInterval(room.tick);
   room.timer = setInterval(() => {
     if (room.status !== "playing") return;
-    room.timeLeft--;
-    if (room.timeLeft === 120) { room.event="wind"; room.eventText="VENTO LATERAL!"; }
-    if (room.timeLeft === 90) { room.event="low"; room.eventText="GRAVIDADE BAIXA!"; }
-    if (room.timeLeft === 60) { room.event="lava"; room.eventText="A LAVA ESTÁ SUBINDO!"; room.lavaY=1080; }
-    if (room.timeLeft < 60 && room.event === "lava") room.lavaY=Math.max(820,room.lavaY-2.1);
-    if (room.timeLeft === 35) { room.event="fast"; room.eventText="PLATAFORMAS INSTÁVEIS!"; }
-    if (room.timeLeft <= 0) {
-      room.status="finished";
-      const winner=[...room.players.values()].filter(p=>p.alive).sort((a,b)=>b.y-a.y)[0];
-      room.winner=winner?.name || "Ninguém";
-      io.to(room.code).emit("notice", winner ? "🏆 " + winner.name + " venceu!" : "Fim de jogo!");
-      clearInterval(room.tick);
+    room.elapsed++;
+    if (room.elapsed === 25) { room.lavaY = 1080; io.to(room.code).emit("notice","🌋 A LAVA COMEÇOU A SUBIR!"); }
+    if (room.elapsed > 25 && room.lavaY > 260) room.lavaY = Math.max(260, room.lavaY - 5.5);
+    if (room.elapsed >= room.nextEvent) {
+      const events = [
+        ["wind","VENTO LATERAL!"],
+        ["low","GRAVIDADE BAIXA!"],
+        ["fast","PLATAFORMAS TURBO!"],
+        ["ice","CHÃO ESCORREGADIO!"],
+        ["double","SALTO DUPLO!"]
+      ];
+      const chosen = events[Math.floor(Math.random() * events.length)];
+      room.event = chosen[0]; room.eventText = chosen[1];
+      room.nextEvent = room.elapsed + 16;
+      io.to(room.code).emit("notice","⚡ EVENTO: " + chosen[1]);
     }
     broadcast(room);
   },1000);
@@ -94,7 +97,7 @@ function startRound(room, soloTest = false) {
     }
     for(const p of room.players.values()){
       if(!p.alive) continue;
-      if(p.y>1160 || (room.event==="lava" && p.y>room.lavaY-20)){
+      if(p.y>1160 || (room.lavaY<1200 && p.y>room.lavaY-20)){
         if(p.power==="shield" && p.powerUntil>Date.now()){p.power="";p.powerUntil=0;p.y=350;p.x=480;io.to(p.id).emit("notice","ESCUDO SALVOU VOCÊ!");}
         else {p.alive=false;io.to(room.code).emit("notice",p.name+" foi eliminado!");}
       }
@@ -110,7 +113,7 @@ io.on("connection",socket=>{
   socket.on("createRoom",({name}={},reply=()=>{})=>{
     leave(socket);
     let code; do{code=makeCode()}while(rooms.has(code));
-    const room={code,players:new Map(),status:"waiting",timeLeft:150,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:1150,powerups:[],timer:null,tick:null};
+    const room={code,players:new Map(),status:"waiting",elapsed:0,nextEvent:18,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:1200,powerups:[],timer:null,tick:null};
     rooms.set(code,room);socket.join(code);socket.data.roomCode=code;
     room.players.set(socket.id,{id:socket.id,name:cleanName(name),color:COLORS[0],x:180,y:930,alive:true,power:"",powerUntil:0});
     reply({ok:true,code});broadcast(room);
@@ -126,6 +129,22 @@ io.on("connection",socket=>{
     reply({ok:true,code});broadcast(room);
   });
   socket.on("startRound",({solo=false}={})=>{const room=rooms.get(socket.data.roomCode);if(room&&room.status!=="playing"&&startRound(room,Boolean(solo)&&room.players.size===1))io.to(room.code).emit("notice",room.soloTest?"Modo teste iniciado! Explore a arena.":"A arena começou! Seja o último sobrevivente!");});
+  socket.on("push",()=>{
+    const room=rooms.get(socket.data.roomCode);if(!room||room.status!=="playing")return;
+    const attacker=room.players.get(socket.id);if(!attacker||!attacker.alive)return;
+    const now=Date.now();if(now-(attacker.lastPush||0)<1200)return;attacker.lastPush=now;
+    let target=null,best=92;
+    for(const p of room.players.values()){
+      if(!p.alive||p.id===attacker.id)continue;
+      const d=Math.hypot(p.x-attacker.x,(p.y-attacker.y)*0.7);
+      if(d<best){best=d;target=p;}
+    }
+    if(target){
+      const dir=target.x>=attacker.x?1:-1;
+      io.to(target.id).emit("knockback",{vx:dir*620,vy:-480});
+      io.to(attacker.id).emit("notice","EMPURRÃO ACERTOU!");
+    } else io.to(attacker.id).emit("notice","Ninguém perto para empurrar!");
+  });
   socket.on("move",input=>{
     const room=rooms.get(socket.data.roomCode);if(!room||room.status!=="playing")return;
     const p=room.players.get(socket.id);if(!p||!p.alive||!input)return;
