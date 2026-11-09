@@ -5,114 +5,132 @@ const crypto = require("crypto");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
 app.use(express.static("public"));
-app.get("/health", (_req, res) => res.json({ ok: true, game: "Arena Strike" }));
+app.get("/health", (_req, res) => res.json({ ok: true, game: "Arena Strike Survival" }));
 
 const rooms = new Map();
-const COLORS = ["#45d6ff", "#ffcb45", "#ff6b8a", "#8dff78", "#b58cff", "#ff9852", "#54f0c0", "#f58cff", "#a9c7ff", "#f5f5f5"];
+const COLORS = ["#52e5ff","#ffce5c","#ff718e","#8df17b","#ba91ff","#ff9d59","#62e6b7","#f18de2","#a9c7ff","#f5f5f5"];
+const POWER_TYPES = ["speed","jump","shield"];
+const POWER_NAMES = { speed:"TURBO", jump:"SUPER PULO", shield:"ESCUDO" };
 const makeCode = () => crypto.randomBytes(3).toString("hex").toUpperCase();
-const cleanName = value => String(value || "Jogador").trim().slice(0, 14) || "Jogador";
+const cleanName = value => String(value || "Jogador").trim().slice(0,14) || "Jogador";
+const rand = (a,b) => Math.random() * (b-a) + a;
 
-function publicRoom(room) {
+function state(room) {
   return {
-    code: room.code,
-    players: [...room.players.values()].map(p => ({ id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, facing: p.facing, tagger: p.tagger })),
-    status: room.status,
-    timeLeft: room.timeLeft
+    code: room.code, status: room.status, timeLeft: room.timeLeft,
+    event: room.event, eventText: room.eventText, lavaY: room.lavaY,
+    players: [...room.players.values()].map(p => ({
+      id:p.id,name:p.name,color:p.color,x:p.x,y:p.y,alive:p.alive,
+      power:p.power,powerUntil:p.powerUntil
+    })),
+    powerups: room.powerups
   };
 }
-function broadcast(room) { io.to(room.code).emit("state", publicRoom(room)); }
-function leaveRoom(socket) {
+function broadcast(room) { io.to(room.code).emit("state", state(room)); }
+function cleanup(room) {
+  clearInterval(room.timer);
+  clearInterval(room.tick);
+  rooms.delete(room.code);
+}
+function leave(socket) {
   const code = socket.data.roomCode;
   if (!code) return;
   const room = rooms.get(code);
-  socket.leave(code);
-  socket.data.roomCode = null;
+  socket.leave(code); socket.data.roomCode = null;
   if (!room) return;
   room.players.delete(socket.id);
-  if (room.players.size === 0) { clearInterval(room.timer); rooms.delete(code); return; }
-  if (![...room.players.values()].some(p => p.tagger)) room.players.values().next().value.tagger = true;
-  if (room.players.size < 2) { room.status = "waiting"; clearInterval(room.timer); }
+  if (!room.players.size) return cleanup(room);
+  if (room.status === "playing") finishIfNeeded(room);
   broadcast(room);
+}
+function finishIfNeeded(room) {
+  const alive = [...room.players.values()].filter(p => p.alive);
+  if (alive.length <= 1 && room.status === "playing") {
+    room.status = "finished";
+    clearInterval(room.timer); clearInterval(room.tick);
+    room.winner = alive[0]?.name || "Ninguém";
+    io.to(room.code).emit("notice", alive[0] ? "🏆 " + alive[0].name + " venceu a arena!" : "Todo mundo foi eliminado!");
+    broadcast(room);
+  }
 }
 function startRound(room) {
   if (room.players.size < 2) return false;
-  room.status = "playing";
-  room.timeLeft = 90;
-  const players = [...room.players.values()];
-  players.forEach((p, i) => { p.x = 120 + i * 58; p.y = 300; p.vx = 0; p.vy = 0; p.tagger = false; });
-  players[Math.floor(Math.random() * players.length)].tagger = true;
-  clearInterval(room.timer);
+  room.status = "playing"; room.timeLeft = 150; room.event = "normal";
+  room.eventText = "SOBREVIVA!"; room.lavaY = 540; room.powerups = [];
+  let i = 0;
+  for (const p of room.players.values()) {
+    p.x = 100 + (i % 5) * 175; p.y = 360; p.alive = true;
+    p.power = ""; p.powerUntil = 0; i++;
+  }
+  clearInterval(room.timer); clearInterval(room.tick);
   room.timer = setInterval(() => {
     if (room.status !== "playing") return;
     room.timeLeft--;
+    if (room.timeLeft === 90) { room.event="low"; room.eventText="GRAVIDADE BAIXA!"; }
+    if (room.timeLeft === 60) { room.event="lava"; room.eventText="A LAVA ESTÁ SUBINDO!"; room.lavaY=490; }
+    if (room.timeLeft < 60 && room.event === "lava") room.lavaY=Math.max(365,room.lavaY-2.1);
+    if (room.timeLeft === 35) { room.event="fast"; room.eventText="PLATAFORMAS INSTÁVEIS!"; }
     if (room.timeLeft <= 0) {
-      room.status = "finished";
-      clearInterval(room.timer);
-      const tagger = [...room.players.values()].find(p => p.tagger);
-      io.to(room.code).emit("roundOver", { message: tagger ? tagger.name + " terminou como pegador!" : "Fim de rodada!" });
+      room.status="finished";
+      const winner=[...room.players.values()].filter(p=>p.alive).sort((a,b)=>b.y-a.y)[0];
+      room.winner=winner?.name || "Ninguém";
+      io.to(room.code).emit("notice", winner ? "🏆 " + winner.name + " venceu!" : "Fim de jogo!");
+      clearInterval(room.tick);
     }
     broadcast(room);
-  }, 1000);
-  broadcast(room);
-  return true;
+  },1000);
+  room.tick=setInterval(()=>{
+    if(room.status!=="playing") return;
+    // Power-ups reappear over safe platforms.
+    if(room.powerups.length<3 && Math.random()<0.035){
+      const spots=[{x:185,y:355},{x:465,y:295},{x:775,y:355},{x:335,y:195},{x:645,y:170}];
+      const spot=spots[Math.floor(Math.random()*spots.length)];
+      room.powerups.push({id:crypto.randomBytes(3).toString("hex"),x:spot.x,y:spot.y,type:POWER_TYPES[Math.floor(Math.random()*POWER_TYPES.length)]});
+    }
+    for(const p of room.players.values()){
+      if(!p.alive) continue;
+      if(p.y>555 || (room.event==="lava" && p.y>room.lavaY-20)){
+        if(p.power==="shield" && p.powerUntil>Date.now()){p.power="";p.powerUntil=0;p.y=350;p.x=480;io.to(p.id).emit("notice","ESCUDO SALVOU VOCÊ!");}
+        else {p.alive=false;io.to(room.code).emit("notice",p.name+" foi eliminado!");}
+      }
+      if(p.powerUntil && p.powerUntil<Date.now()){p.power="";p.powerUntil=0;}
+      const idx=room.powerups.findIndex(q=>Math.hypot(p.x-q.x,p.y-q.y)<34);
+      if(idx>=0){const q=room.powerups.splice(idx,1)[0];p.power=q.type;p.powerUntil=Date.now()+9000;io.to(p.id).emit("notice","PODER: "+POWER_NAMES[q.type]+"!");}
+    }
+    finishIfNeeded(room); broadcast(room);
+  },100);
 }
 
-io.on("connection", socket => {
-  socket.on("createRoom", ({ name } = {}, reply = () => {}) => {
-    leaveRoom(socket);
-    let code; do { code = makeCode(); } while (rooms.has(code));
-    const room = { code, players: new Map(), status: "waiting", timeLeft: 90, timer: null };
-    rooms.set(code, room);
-    socket.join(code); socket.data.roomCode = code;
-    room.players.set(socket.id, { id: socket.id, name: cleanName(name), color: COLORS[0], x: 140, y: 300, vx: 0, vy: 0, facing: 1, tagger: false });
-    reply({ ok: true, code }); broadcast(room);
+io.on("connection",socket=>{
+  socket.on("createRoom",({name}={},reply=()=>{})=>{
+    leave(socket);
+    let code; do{code=makeCode()}while(rooms.has(code));
+    const room={code,players:new Map(),status:"waiting",timeLeft:150,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:540,powerups:[],timer:null,tick:null};
+    rooms.set(code,room);socket.join(code);socket.data.roomCode=code;
+    room.players.set(socket.id,{id:socket.id,name:cleanName(name),color:COLORS[0],x:100,y:360,alive:true,power:"",powerUntil:0});
+    reply({ok:true,code});broadcast(room);
   });
-  socket.on("joinRoom", ({ code, name } = {}, reply = () => {}) => {
-    code = String(code || "").trim().toUpperCase();
-    const room = rooms.get(code);
-    if (!room) return reply({ ok: false, error: "Sala não encontrada." });
-    if (room.players.size >= 10) return reply({ ok: false, error: "A sala já está cheia (10 jogadores)." });
-    if (room.status === "playing") return reply({ ok: false, error: "A partida já começou." });
-    leaveRoom(socket);
-    socket.join(code); socket.data.roomCode = code;
-    room.players.set(socket.id, { id: socket.id, name: cleanName(name), color: COLORS[room.players.size % COLORS.length], x: 140 + room.players.size * 50, y: 300, vx: 0, vy: 0, facing: 1, tagger: false });
-    reply({ ok: true, code }); broadcast(room);
+  socket.on("joinRoom",({code,name}={},reply=()=>{})=>{
+    code=String(code||"").trim().toUpperCase();const room=rooms.get(code);
+    if(!room)return reply({ok:false,error:"Sala não encontrada."});
+    if(room.players.size>=10)return reply({ok:false,error:"Sala cheia (10 jogadores)."});
+    if(room.status==="playing")return reply({ok:false,error:"A partida já começou."});
+    leave(socket);const idx=room.players.size;
+    socket.join(code);socket.data.roomCode=code;
+    room.players.set(socket.id,{id:socket.id,name:cleanName(name),color:COLORS[idx%COLORS.length],x:100+idx*70,y:360,alive:true,power:"",powerUntil:0});
+    reply({ok:true,code});broadcast(room);
   });
-  socket.on("startRound", () => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room || room.status === "playing") return;
-    if (startRound(room)) io.to(room.code).emit("notice", "A partida começou! Fuja do pegador!");
+  socket.on("startRound",()=>{const room=rooms.get(socket.data.roomCode);if(room&&room.status!=="playing"&&startRound(room))io.to(room.code).emit("notice","A arena começou! Seja o último sobrevivente!");});
+  socket.on("move",input=>{
+    const room=rooms.get(socket.data.roomCode);if(!room||room.status!=="playing")return;
+    const p=room.players.get(socket.id);if(!p||!p.alive||!input)return;
+    p.x=Math.max(18,Math.min(942,Number(input.x)||p.x));
+    p.y=Math.max(0,Math.min(600,Number(input.y)||p.y));
   });
-  socket.on("move", input => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room || room.status !== "playing") return;
-    const p = room.players.get(socket.id);
-    if (!p || !input) return;
-    p.x = Math.max(28, Math.min(932, Number(input.x) || p.x));
-    p.y = Math.max(35, Math.min(470, Number(input.y) || p.y));
-    p.facing = input.facing < 0 ? -1 : 1;
-    // Tag check is performed on the server using reported player positions.
-    const tagger = [...room.players.values()].find(x => x.tagger);
-    if (tagger) {
-      for (const other of room.players.values()) {
-        if (other.id !== tagger.id && Math.hypot(tagger.x - other.x, tagger.y - other.y) < 38) {
-          tagger.tagger = false; other.tagger = true;
-          io.to(room.code).emit("tagged", { name: other.name });
-          break;
-        }
-      }
-    }
-    broadcast(room);
-  });
-  socket.on("restartRound", () => {
-    const room = rooms.get(socket.data.roomCode);
-    if (room && room.status === "finished") startRound(room);
-  });
-  socket.on("leaveRoom", () => leaveRoom(socket));
-  socket.on("disconnect", () => leaveRoom(socket));
+  socket.on("leaveRoom",()=>leave(socket));
+  socket.on("disconnect",()=>leave(socket));
 });
-
-server.listen(PORT, () => console.log("Arena Strike rodando na porta " + PORT));
+server.listen(PORT,()=>console.log("Arena Strike Survival na porta "+PORT));
