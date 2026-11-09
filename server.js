@@ -69,6 +69,7 @@ function startRound(room) {
   room.timer = setInterval(() => {
     if (room.status !== "playing") return;
     room.timeLeft--;
+    if (room.timeLeft === 120) { room.event="wind"; room.eventText="VENTO LATERAL!"; }
     if (room.timeLeft === 90) { room.event="low"; room.eventText="GRAVIDADE BAIXA!"; }
     if (room.timeLeft === 60) { room.event="lava"; room.eventText="A LAVA ESTÁ SUBINDO!"; room.lavaY=1080; }
     if (room.timeLeft < 60 && room.event === "lava") room.lavaY=Math.max(820,room.lavaY-2.1);
