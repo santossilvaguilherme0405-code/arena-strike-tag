@@ -48,7 +48,7 @@ function leave(socket) {
 }
 function finishIfNeeded(room) {
   const alive = [...room.players.values()].filter(p => p.alive);
-  if (alive.length <= 1 && room.status === "playing" && !room.soloTest) {
+  if ((room.soloTest ? alive.length === 0 : alive.length <= 1) && room.status === "playing") {
     room.status = "finished";
     clearInterval(room.timer); clearInterval(room.tick);
     room.winner = alive[0]?.name || "Ninguém";
