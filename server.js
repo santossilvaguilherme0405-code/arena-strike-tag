@@ -48,7 +48,7 @@ function leave(socket) {
 }
 function finishIfNeeded(room) {
   const alive = [...room.players.values()].filter(p => p.alive);
-  if (alive.length <= 1 && room.status === "playing") {
+  if (alive.length <= 1 && room.status === "playing" && !room.soloTest) {
     room.status = "finished";
     clearInterval(room.timer); clearInterval(room.tick);
     room.winner = alive[0]?.name || "Ninguém";
@@ -56,8 +56,9 @@ function finishIfNeeded(room) {
     broadcast(room);
   }
 }
-function startRound(room) {
-  if (room.players.size < 2) return false;
+function startRound(room, soloTest = false) {
+  if (room.players.size < (soloTest ? 1 : 2)) return false;
+  room.soloTest = soloTest;
   room.status = "playing"; room.timeLeft = 150; room.event = "normal";
   room.eventText = "SOBREVIVA!"; room.lavaY = 1150; room.powerups = [];
   let i = 0;
@@ -124,7 +125,7 @@ io.on("connection",socket=>{
     room.players.set(socket.id,{id:socket.id,name:cleanName(name),color:COLORS[idx%COLORS.length],x:100+idx*70,y:360,alive:true,power:"",powerUntil:0});
     reply({ok:true,code});broadcast(room);
   });
-  socket.on("startRound",()=>{const room=rooms.get(socket.data.roomCode);if(room&&room.status!=="playing"&&startRound(room))io.to(room.code).emit("notice","A arena começou! Seja o último sobrevivente!");});
+  socket.on("startRound",({solo=false}={})=>{const room=rooms.get(socket.data.roomCode);if(room&&room.status!=="playing"&&startRound(room,Boolean(solo)&&room.players.size===1))io.to(room.code).emit("notice",room.soloTest?"Modo teste iniciado! Explore a arena.":"A arena começou! Seja o último sobrevivente!");});
   socket.on("move",input=>{
     const room=rooms.get(socket.data.roomCode);if(!room||room.status!=="playing")return;
     const p=room.players.get(socket.id);if(!p||!p.alive||!input)return;
