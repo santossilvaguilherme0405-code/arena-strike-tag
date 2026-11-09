@@ -1,7 +1,7 @@
 const socket=io();
 const $=id=>document.getElementById(id);
 const lobby=$("lobby"),game=$("game"),canvas=$("arena"),ctx=canvas.getContext("2d");
-let myId=null,roomCode="",players=[],powerups=[],status="waiting",timeLeft=150,event="normal",eventText="AGUARDANDO",lavaY=1150;
+let myId=null,roomCode="",players=[],powerups=[],status="waiting",event="normal",eventText="AGUARDANDO",lavaY=1200,knockX=0,knockY=0,lastPush=0,spectateId=null,airJumpUsed=false;
 let keys={},x=180,y=930,vx=0,vy=0,grounded=false,lastSent=0,camX=0,camY=0;
 const WORLD_W=1800,WORLD_H=1200;
 const platforms=[
@@ -25,22 +25,26 @@ $("joinBtn").onclick=()=>roomAction("joinRoom",{name:name(),code:$("roomCode").v
 $("copyBtn").onclick=()=>navigator.clipboard?.writeText(roomCode).then(()=>toast("Código copiado!")).catch(()=>toast("Código: "+roomCode));
 $("leaveBtn").onclick=()=>{socket.emit("leaveRoom");game.classList.add("hidden");lobby.classList.remove("hidden");roomCode="";status="waiting";};
 $("startBtn").onclick=()=>{const solo=players.length===1;socket.emit("startRound",{solo});};
+function push(){if(status!=="playing"||!players.find(p=>p.id===myId)?.alive)return;const now=Date.now();if(now-lastPush<650)return;lastPush=now;socket.emit("push");}
+$("touchPush").addEventListener("pointerdown",e=>{e.preventDefault();push();});
+window.addEventListener("keydown",e=>{if(e.key.toLowerCase()==="f"&&!e.repeat)push();});
 function bindTouch(id,key){const el=$(id);if(!el)return;const down=e=>{e.preventDefault();keys[key]=true;el.setPointerCapture?.(e.pointerId);};const up=e=>{e.preventDefault();keys[key]=false;};el.addEventListener("pointerdown",down);["pointerup","pointercancel","lostpointercapture","pointerleave"].forEach(type=>el.addEventListener(type,up));}
 bindTouch("touchLeft","a");bindTouch("touchRight","d");bindTouch("touchJump"," ");
 socket.on("connect",()=>myId=socket.id);
 socket.on("connect_error",()=>{$("lobbyError").textContent="Não foi possível conectar ao servidor.";});
-socket.on("state",s=>{players=s.players;powerups=s.powerups||[];status=s.status;timeLeft=s.timeLeft;event=s.event;eventText=s.eventText;lavaY=s.lavaY;$("playerCount").textContent=players.filter(p=>p.alive).length+"/"+players.length;$("timer").textContent=String(Math.floor(timeLeft/60)).padStart(2,"0")+":"+String(timeLeft%60).padStart(2,"0");$("eventLabel").textContent=eventText;renderPlayers();const me=players.find(p=>p.id===myId);if(me&&status!=="playing"){x=me.x;y=me.y}const alive=players.filter(p=>p.alive);$("startBtn").style.display=status==="playing"?"none":"block";$("startBtn").textContent=status==="finished"?"JOGAR NOVAMENTE →":(players.length===1?"TESTAR SOZINHO →":"COMEÇAR PARTIDA →");$("startBtn").disabled=players.length<1;$("gameHint").textContent=status==="waiting"?(players.length===1?"Modo teste disponível: jogue sozinho ou convide amigos!":"Chame seus amigos para começar."):status==="playing"?(me?.alive?"Explore, pegue poderes e fuja da lava!":"Você foi eliminado! Assista à partida."):(alive.length?"Rodada encerrada!":"Todos foram eliminados!");});
+socket.on("state",s=>{players=s.players;powerups=s.powerups||[];status=s.status;event=s.event;eventText=s.eventText;lavaY=s.lavaY;$("playerCount").textContent=players.filter(p=>p.alive).length+"/"+players.length;$("eventLabel").textContent=eventText;renderPlayers();const me=players.find(p=>p.id===myId);if(me&&status!=="playing"){x=me.x;y=me.y}const alive=players.filter(p=>p.alive);if(me&&!me.alive&&alive.length){if(!spectateId||!alive.some(p=>p.id===spectateId))spectateId=alive[0].id;}else if(me?.alive)spectateId=null;$("startBtn").style.display=status==="playing"?"none":"block";$("startBtn").textContent=status==="finished"?"JOGAR NOVAMENTE →":(players.length===1?"TESTAR SOZINHO →":"COMEÇAR PARTIDA →");$("startBtn").disabled=players.length<1;$("gameHint").textContent=status==="waiting"?(players.length===1?"Modo teste disponível: jogue sozinho ou convide amigos!":"Chame seus amigos para começar."):status==="playing"?(me?.alive?"Empurre os adversários, pegue poderes e fuja da lava!":(alive.length?"Você foi eliminado! Assistindo: "+(alive.find(p=>p.id===spectateId)?.name||alive[0].name):"Todos foram eliminados.")):(alive.length?"Rodada encerrada!":"Todos foram eliminados!");});
 socket.on("notice",toast);
+socket.on("knockback",k=>{knockX+=k.vx;knockY=Math.min(knockY,k.vy);toast("Você levou um empurrão!");});
 function renderPlayers(){$("players").innerHTML="";players.forEach(p=>{const li=document.createElement("li"),dot=document.createElement("i"),span=document.createElement("span"),em=document.createElement("em");dot.className="dot";dot.style.background=p.color;span.textContent=p.name+(p.id===myId?" (você)":"");em.textContent=p.alive?"VIVO":"ELIMINADO";li.append(dot,span,em);$("players").append(li);});}
 window.addEventListener("keydown",e=>{if(["ArrowLeft","ArrowRight","ArrowUp"," "].includes(e.key))e.preventDefault();keys[e.key.toLowerCase()]=true;});
 window.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 function moverRect(m,t){const pace=event==="fast"?2.4:1;return {x:m.x+Math.sin(t/(900/pace)+m.phase)*m.range,y:m.y,w:m.w,h:m.h};}
-function update(dt){if(status!=="playing")return;const me=players.find(p=>p.id===myId);if(!me?.alive)return;const boosted=me.power==="speed"&&me.powerUntil>Date.now(),jumpBoost=me.power==="jump"&&me.powerUntil>Date.now();const speed=boosted?390:285;
- if(keys.a||keys.arrowleft)vx=-speed;else if(keys.d||keys.arrowright)vx=speed;else vx*=Math.pow(.001,dt);
- if((keys[" "]||keys.w||keys.arrowup)&&grounded){const jumpForce=jumpBoost?(event==="low"?1050:820):(event==="low"?760:610);vy=-jumpForce;grounded=false}
- vy+=(event==="low"?650:1450)*dt;x+=vx*dt;if(event==="wind")x+=Math.sin(performance.now()/650)*115*dt;y+=vy*dt;grounded=false;
+function update(dt){if(status!=="playing")return;const me=players.find(p=>p.id===myId);if(!me)return;if(!me.alive){const target=players.find(p=>p.id===spectateId&&p.alive)||players.find(p=>p.alive);if(target){const tx=Math.max(0,Math.min(WORLD_W-canvas.width,target.x-canvas.width/2)),ty=Math.max(0,Math.min(WORLD_H-canvas.height,target.y-canvas.height/2));camX+=(tx-camX)*Math.min(1,dt*4);camY+=(ty-camY)*Math.min(1,dt*4);}return;}const boosted=me.power==="speed"&&me.powerUntil>Date.now(),jumpBoost=me.power==="jump"&&me.powerUntil>Date.now();const speed=boosted?390:285;
+ if(keys.a||keys.arrowleft)vx=event==="ice"?vx+(-speed-vx)*Math.min(1,dt*5):-speed;else if(keys.d||keys.arrowright)vx=event==="ice"?vx+(speed-vx)*Math.min(1,dt*5):speed;else vx*=Math.pow(event==="ice"?.35:.001,dt);
+ if((keys[" "]||keys.w||keys.arrowup)&&grounded){const jumpForce=jumpBoost?(event==="low"?1050:820):(event==="low"?760:610);vy=-jumpForce;grounded=false;airJumpUsed=false}else if((keys[" "]||keys.w||keys.arrowup)&&event==="double"&&!airJumpUsed){vy=-720;airJumpUsed=true}
+ vy+=(event==="low"?650:1450)*dt;x+=(vx+knockX)*dt;knockX*=Math.pow(.08,dt);vy+=knockY*dt;knockY*=Math.pow(.08,dt);if(event==="wind")x+=Math.sin(performance.now()/650)*115*dt;y+=vy*dt;grounded=false;
  const r={x:x-13,y:y-22,w:26,h:44},t=performance.now();
- for(const p of platforms){if(vy>=0&&r.x+r.w>p.x&&r.x<p.x+p.w&&r.y+r.h>=p.y&&r.y+r.h<=p.y+p.h+Math.max(12,vy*dt+4)){y=p.y-22;vy=0;grounded=true;}}
+ for(const p of platforms){if(vy>=0&&r.x+r.w>p.x&&r.x<p.x+p.w&&r.y+r.h>=p.y&&r.y+r.h<=p.y+p.h+Math.max(12,vy*dt+4)){y=p.y-22;vy=0;grounded=true;airJumpUsed=false;}}
  for(const m of movers){const p=moverRect(m,t);if(vy>=0&&r.x+r.w>p.x&&r.x<p.x+p.w&&r.y+r.h>=p.y&&r.y+r.h<=p.y+p.h+Math.max(12,vy*dt+4)){y=p.y-22;vy=0;grounded=true;}}
  x=Math.max(16,Math.min(WORLD_W-16,x));if(y>WORLD_H)y=WORLD_H;
  const targetX=Math.max(0,Math.min(WORLD_W-canvas.width,x-canvas.width/2));
@@ -59,7 +63,7 @@ function draw(){const t=performance.now();ctx.clearRect(0,0,canvas.width,canvas.
  // Decoração e pontos de referência
  const landmarks=[{x:120,y:875,label:"RUÍNAS"},{x:760,y:810,label:"TORRE"},{x:1450,y:830,label:"PONTE"},{x:300,y:390,label:"SETOR A"},{x:1280,y:120,label:"CÉU"}];
  landmarks.forEach(l=>{ctx.fillStyle="#91a8ca";ctx.font="bold 13px Inter";ctx.textAlign="center";ctx.fillText(l.label,l.x,l.y);});
- if(event==="lava"){ctx.fillStyle="#ff593b";ctx.globalAlpha=.82;ctx.fillRect(0,lavaY,WORLD_W,WORLD_H-lavaY);ctx.globalAlpha=1;ctx.fillStyle="#ffc35a";for(let i=0;i<WORLD_W;i+=40)ctx.fillRect(i,lavaY+Math.sin(i+t/120)*4,24,4);}
+ if(lavaY<WORLD_H){ctx.fillStyle="#ff593b";ctx.globalAlpha=.82;ctx.fillRect(0,lavaY,WORLD_W,WORLD_H-lavaY);ctx.globalAlpha=1;ctx.fillStyle="#ffc35a";for(let i=0;i<WORLD_W;i+=40)ctx.fillRect(i,lavaY+Math.sin(i+t/120)*4,24,4);}
  powerups.forEach(q=>{const color=q.type==="speed"?"#53e5ff":q.type==="jump"?"#c49aff":"#8dff8c";ctx.save();ctx.shadowBlur=20;ctx.shadowColor=color;ctx.fillStyle=color;ctx.beginPath();ctx.arc(q.x,q.y,13+Math.sin(t/150)*2,0,Math.PI*2);ctx.fill();ctx.restore();ctx.fillStyle="#102039";ctx.font="bold 12px Inter";ctx.textAlign="center";ctx.fillText(q.type==="speed"?"⚡":q.type==="jump"?"↑":"✚",q.x,q.y+4);});
  players.forEach(p=>{if(!p.alive)return;const px=p.id===myId?x:p.x,py=p.id===myId?y:p.y;ctx.save();ctx.translate(px,py);ctx.fillStyle="#0008";ctx.beginPath();ctx.ellipse(0,22,17,5,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(0,-9,13,0,Math.PI*2);ctx.fill();rounded(-12,3,24,23,8,p.color);ctx.fillStyle="#102036";ctx.beginPath();ctx.arc(4,-11,2.5,0,Math.PI*2);ctx.fill();if(p.id===myId){ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,-8,17,0,Math.PI*2);ctx.stroke();if(p.power&&p.powerUntil>Date.now()){ctx.strokeStyle="#ffe16b";ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,-8,23,0,Math.PI*2);ctx.stroke();}}ctx.restore();});
  ctx.restore();
@@ -70,6 +74,7 @@ function draw(){const t=performance.now();ctx.clearRect(0,0,canvas.width,canvas.
  ctx.restore();
  if(status==="waiting"){ctx.fillStyle="#fff";ctx.font="bold 18px Inter";ctx.textAlign="center";ctx.fillText("CHAME SEUS AMIGOS PARA A ARENA",480,65)}
  if(status==="finished"){ctx.fillStyle="#fff";ctx.font="900 36px Inter";ctx.textAlign="center";ctx.fillText("FIM DE JOGO!",480,70)}
+ if(status==="playing"&&!players.find(p=>p.id===myId)?.alive){ctx.fillStyle="#ffffffdd";ctx.font="bold 15px Inter";ctx.textAlign="center";ctx.fillText("MODO ESPECTADOR",480,32)}
  requestAnimationFrame(draw);
 }
 let prev=performance.now();function loop(now){const dt=Math.min((now-prev)/1000,.04);prev=now;update(dt);requestAnimationFrame(loop)}requestAnimationFrame(loop);requestAnimationFrame(draw);
