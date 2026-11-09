@@ -1,34 +1,28 @@
-# Arena Strike — Tag Multiplayer
+# Arena Strike — Survival Multiplayer
 
-Jogo 2D de pega-pega multiplayer para navegador, com salas de até 10 jogadores.
+Jogo 2D de sobrevivência multiplayer para navegador, com salas de até 10 jogadores.
 
-## Requisitos
-- Node.js 18 ou superior
-- npm
+## Como jogar
+- Crie uma sala e compartilhe o código.
+- Os amigos entram com o código da sala.
+- Comece com pelo menos 2 jogadores.
+- Mova com A/D ou setas e pule com Espaço, W ou seta para cima.
+- Seja o último sobrevivente. Caia fora da arena e você será eliminado.
+- Colete orbes: turbo, super pulo e escudo.
+- Eventos mudam a rodada: gravidade baixa e lava subindo.
 
-## Executar localmente
+## Executar
+Requer Node.js 18+.
 ```bash
 npm install
 npm start
-``
-Abra http://localhost:3000. Para jogar em computadores diferentes na mesma rede, hospede o servidor em um computador acessível pelos outros dispositivos ou publique em uma plataforma que suporte Node.js e WebSockets.
+```
+Abra http://localhost:3000.
 
-## Controles
-- A / D ou setas: mover
-- Espaço, W ou seta para cima: pular
+## Render
+- Build Command: `npm install`
+- Start Command: `npm start`
+- O servidor usa `process.env.PORT` e Socket.IO para multiplayer.
 
-## Regras atuais
-- Crie uma sala e compartilhe o código.
-- Até 10 jogadores por sala.
-- Um jogador aleatório começa como pegador.
-- Ao encostar em outro jogador, o pegador passa para ele.
-- Rodadas de 90 segundos.
-
-## Próximas melhorias
-- Melhorar validação de movimento no servidor e prevenção contra trapaças.
-- Adicionar mapas, power-ups e seleção de personagens.
-- Adicionar lobby com anfitrião e início controlado pelo criador.
-- Ajustar física e colisões com testes em dispositivos diferentes.
-
-## Deploy
-Use um host que execute processos Node.js e mantenha conexões WebSocket (por exemplo, Render ou Railway). Configure o comando de build como `npm install` e o comando de início como `npm start`.
+## Estado
+Esta é uma primeira versão jogável em desenvolvimento. O movimento ainda depende de posições reportadas pelo cliente e precisa de validação no servidor antes de uma versão competitiva.
