@@ -32,11 +32,11 @@ socket.on("notice",toast);
 function renderPlayers(){$("players").innerHTML="";players.forEach(p=>{const li=document.createElement("li"),dot=document.createElement("i"),span=document.createElement("span"),em=document.createElement("em");dot.className="dot";dot.style.background=p.color;span.textContent=p.name+(p.id===myId?" (você)":"");em.textContent=p.alive?"VIVO":"ELIMINADO";li.append(dot,span,em);$("players").append(li);});}
 window.addEventListener("keydown",e=>{if(["ArrowLeft","ArrowRight","ArrowUp"," "].includes(e.key))e.preventDefault();keys[e.key.toLowerCase()]=true;});
 window.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
-function moverRect(m,t){return {x:m.x+Math.sin(t/900+m.phase)*m.range,y:m.y,w:m.w,h:m.h};}
+function moverRect(m,t){const pace=event==="fast"?2.4:1;return {x:m.x+Math.sin(t/(900/pace)+m.phase)*m.range,y:m.y,w:m.w,h:m.h};}
 function update(dt){if(status!=="playing")return;const me=players.find(p=>p.id===myId);if(!me?.alive)return;const boosted=me.power==="speed"&&me.powerUntil>Date.now(),jumpBoost=me.power==="jump"&&me.powerUntil>Date.now();const speed=boosted?390:285;
  if(keys.a||keys.arrowleft)vx=-speed;else if(keys.d||keys.arrowright)vx=speed;else vx*=Math.pow(.001,dt);
- if((keys[" "]||keys.w||keys.arrowup)&&grounded){vy=-(jumpBoost?820:610)*(event==="low"?.72:1);grounded=false}
- vy+=(event==="low"?850:1450)*dt;x+=vx*dt;y+=vy*dt;grounded=false;
+ if((keys[" "]||keys.w||keys.arrowup)&&grounded){const jumpForce=jumpBoost?(event==="low"?1050:820):(event==="low"?760:610);vy=-jumpForce;grounded=false}
+ vy+=(event==="low"?650:1450)*dt;x+=vx*dt;if(event==="wind")x+=Math.sin(performance.now()/650)*115*dt;y+=vy*dt;grounded=false;
  const r={x:x-13,y:y-22,w:26,h:44},t=performance.now();
  for(const p of platforms){if(vy>=0&&r.x+r.w>p.x&&r.x<p.x+p.w&&r.y+r.h>=p.y&&r.y+r.h<=p.y+p.h+Math.max(12,vy*dt+4)){y=p.y-22;vy=0;grounded=true;}}
  for(const m of movers){const p=moverRect(m,t);if(vy>=0&&r.x+r.w>p.x&&r.x<p.x+p.w&&r.y+r.h>=p.y&&r.y+r.h<=p.y+p.h+Math.max(12,vy*dt+4)){y=p.y-22;vy=0;grounded=true;}}
