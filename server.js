@@ -59,7 +59,9 @@ function finishIfNeeded(room) {
 function startRound(room, soloTest = false) {
   if (room.players.size < (soloTest ? 1 : 2)) return false;
   room.soloTest = soloTest;
-  room.status = "playing"; room.elapsed = 0; room.nextEvent = 13; room.mapId = Math.floor(Math.random()*3); room.event = "normal";
+  room.status = "playing"; room.elapsed = 0; room.nextEvent = 13; const mapChoices = [0,1,2].filter(id => id !== room.lastMapId);
+   room.mapId = mapChoices[Math.floor(Math.random()*mapChoices.length)];
+   room.lastMapId = room.mapId; room.event = "normal";
   room.eventText = "SOBREVIVA!"; room.lavaY = 1200; room.powerups = [];
   let i = 0;
   for (const p of room.players.values()) {
@@ -115,7 +117,7 @@ io.on("connection",socket=>{
   socket.on("createRoom",({name}={},reply=()=>{})=>{
     leave(socket);
     let code; do{code=makeCode()}while(rooms.has(code));
-    const room={code,players:new Map(),status:"waiting",elapsed:0,nextEvent:18,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:1200,mapId:0,powerups:[],timer:null,tick:null};
+    const room={code,players:new Map(),status:"waiting",elapsed:0,nextEvent:18,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:1200,mapId:0,lastMapId:-1,powerups:[],timer:null,tick:null};
     rooms.set(code,room);socket.join(code);socket.data.roomCode=code;
     room.players.set(socket.id,{id:socket.id,name:cleanName(name),color:COLORS[0],x:180,y:930,alive:true,power:"",powerUntil:0});
     reply({ok:true,code});broadcast(room);
