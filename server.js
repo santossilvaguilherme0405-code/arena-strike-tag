@@ -20,7 +20,7 @@ const rand = (a,b) => Math.random() * (b-a) + a;
 
 function state(room) {
   return {
-    code: room.code, status: room.status,
+    code: room.code, status: room.status, mapId: room.mapId,
     event: room.event, eventText: room.eventText, lavaY: room.lavaY,
     players: [...room.players.values()].map(p => ({
       id:p.id,name:p.name,color:p.color,x:p.x,y:p.y,alive:p.alive,
@@ -59,7 +59,7 @@ function finishIfNeeded(room) {
 function startRound(room, soloTest = false) {
   if (room.players.size < (soloTest ? 1 : 2)) return false;
   room.soloTest = soloTest;
-  room.status = "playing"; room.elapsed = 0; room.nextEvent = 18; room.event = "normal";
+  room.status = "playing"; room.elapsed = 0; room.nextEvent = 13; room.mapId = Math.floor(Math.random()*3); room.event = "normal";
   room.eventText = "SOBREVIVA!"; room.lavaY = 1200; room.powerups = [];
   let i = 0;
   for (const p of room.players.values()) {
@@ -70,19 +70,21 @@ function startRound(room, soloTest = false) {
   room.timer = setInterval(() => {
     if (room.status !== "playing") return;
     room.elapsed++;
-    if (room.elapsed === 25) { room.lavaY = 1080; io.to(room.code).emit("notice","🌋 A LAVA COMEÇOU A SUBIR!"); }
-    if (room.elapsed > 25 && room.lavaY > 260) room.lavaY = Math.max(260, room.lavaY - 5.5);
+    if (room.elapsed === 20) { room.lavaY = 1080; io.to(room.code).emit("notice","🌋 A LAVA COMEÇOU A SUBIR!"); }
+    if (room.elapsed > 20 && room.lavaY > 260) room.lavaY = Math.max(260, room.lavaY - (room.event==="surge"?11:8));
     if (room.elapsed >= room.nextEvent) {
       const events = [
         ["wind","VENTO LATERAL!"],
         ["low","GRAVIDADE BAIXA!"],
         ["fast","PLATAFORMAS TURBO!"],
         ["ice","CHÃO ESCORREGADIO!"],
-        ["double","SALTO DUPLO!"]
+        ["double","SALTO DUPLO!"],
+        ["high","GRAVIDADE ALTA!"],
+        ["surge","LAVA ACELERADA!"]
       ];
       const chosen = events[Math.floor(Math.random() * events.length)];
       room.event = chosen[0]; room.eventText = chosen[1];
-      room.nextEvent = room.elapsed + 16;
+      room.nextEvent = room.elapsed + 13;
       io.to(room.code).emit("notice","⚡ EVENTO: " + chosen[1]);
     }
     broadcast(room);
@@ -113,7 +115,7 @@ io.on("connection",socket=>{
   socket.on("createRoom",({name}={},reply=()=>{})=>{
     leave(socket);
     let code; do{code=makeCode()}while(rooms.has(code));
-    const room={code,players:new Map(),status:"waiting",elapsed:0,nextEvent:18,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:1200,powerups:[],timer:null,tick:null};
+    const room={code,players:new Map(),status:"waiting",elapsed:0,nextEvent:18,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:1200,mapId:0,powerups:[],timer:null,tick:null};
     rooms.set(code,room);socket.join(code);socket.data.roomCode=code;
     room.players.set(socket.id,{id:socket.id,name:cleanName(name),color:COLORS[0],x:180,y:930,alive:true,power:"",powerUntil:0});
     reply({ok:true,code});broadcast(room);
