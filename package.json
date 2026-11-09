@@ -1,8 +1,8 @@
 {
-  "name": "arena-strike-tag",
-  "version": "1.0.0",
+  "name": "arena-strike-survival",
+  "version": "1.1.0",
   "private": true,
-  "description": "Arena Strike - multiplayer tag platform game",
+  "description": "Arena Strike - multiplayer survival platform game",
   "main": "server.js",
   "scripts": { "start": "node server.js", "dev": "node --watch server.js" },
   "engines": { "node": ">=18" },
