@@ -59,10 +59,10 @@ function finishIfNeeded(room) {
 function startRound(room) {
   if (room.players.size < 2) return false;
   room.status = "playing"; room.timeLeft = 150; room.event = "normal";
-  room.eventText = "SOBREVIVA!"; room.lavaY = 540; room.powerups = [];
+  room.eventText = "SOBREVIVA!"; room.lavaY = 1150; room.powerups = [];
   let i = 0;
   for (const p of room.players.values()) {
-    p.x = 100 + (i % 5) * 175; p.y = 360; p.alive = true;
+    p.x = 180 + (i % 5) * 330; p.y = 930; p.alive = true;
     p.power = ""; p.powerUntil = 0; i++;
   }
   clearInterval(room.timer); clearInterval(room.tick);
@@ -70,8 +70,8 @@ function startRound(room) {
     if (room.status !== "playing") return;
     room.timeLeft--;
     if (room.timeLeft === 90) { room.event="low"; room.eventText="GRAVIDADE BAIXA!"; }
-    if (room.timeLeft === 60) { room.event="lava"; room.eventText="A LAVA ESTÁ SUBINDO!"; room.lavaY=490; }
-    if (room.timeLeft < 60 && room.event === "lava") room.lavaY=Math.max(365,room.lavaY-2.1);
+    if (room.timeLeft === 60) { room.event="lava"; room.eventText="A LAVA ESTÁ SUBINDO!"; room.lavaY=1080; }
+    if (room.timeLeft < 60 && room.event === "lava") room.lavaY=Math.max(820,room.lavaY-2.1);
     if (room.timeLeft === 35) { room.event="fast"; room.eventText="PLATAFORMAS INSTÁVEIS!"; }
     if (room.timeLeft <= 0) {
       room.status="finished";
@@ -86,13 +86,13 @@ function startRound(room) {
     if(room.status!=="playing") return;
     // Power-ups reappear over safe platforms.
     if(room.powerups.length<3 && Math.random()<0.035){
-      const spots=[{x:185,y:355},{x:465,y:295},{x:775,y:355},{x:335,y:195},{x:645,y:170}];
+      const spots=[{x:250,y:845},{x:570,y:740},{x:930,y:650},{x:1260,y:800},{x:1580,y:900},{x:430,y:500},{x:850,y:390},{x:1190,y:480},{x:1510,y:570},{x:980,y:180}];
       const spot=spots[Math.floor(Math.random()*spots.length)];
       room.powerups.push({id:crypto.randomBytes(3).toString("hex"),x:spot.x,y:spot.y,type:POWER_TYPES[Math.floor(Math.random()*POWER_TYPES.length)]});
     }
     for(const p of room.players.values()){
       if(!p.alive) continue;
-      if(p.y>555 || (room.event==="lava" && p.y>room.lavaY-20)){
+      if(p.y>1160 || (room.event==="lava" && p.y>room.lavaY-20)){
         if(p.power==="shield" && p.powerUntil>Date.now()){p.power="";p.powerUntil=0;p.y=350;p.x=480;io.to(p.id).emit("notice","ESCUDO SALVOU VOCÊ!");}
         else {p.alive=false;io.to(room.code).emit("notice",p.name+" foi eliminado!");}
       }
@@ -108,9 +108,9 @@ io.on("connection",socket=>{
   socket.on("createRoom",({name}={},reply=()=>{})=>{
     leave(socket);
     let code; do{code=makeCode()}while(rooms.has(code));
-    const room={code,players:new Map(),status:"waiting",timeLeft:150,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:540,powerups:[],timer:null,tick:null};
+    const room={code,players:new Map(),status:"waiting",timeLeft:150,event:"normal",eventText:"AGUARDANDO JOGADORES",lavaY:1150,powerups:[],timer:null,tick:null};
     rooms.set(code,room);socket.join(code);socket.data.roomCode=code;
-    room.players.set(socket.id,{id:socket.id,name:cleanName(name),color:COLORS[0],x:100,y:360,alive:true,power:"",powerUntil:0});
+    room.players.set(socket.id,{id:socket.id,name:cleanName(name),color:COLORS[0],x:180,y:930,alive:true,power:"",powerUntil:0});
     reply({ok:true,code});broadcast(room);
   });
   socket.on("joinRoom",({code,name}={},reply=()=>{})=>{
@@ -127,8 +127,8 @@ io.on("connection",socket=>{
   socket.on("move",input=>{
     const room=rooms.get(socket.data.roomCode);if(!room||room.status!=="playing")return;
     const p=room.players.get(socket.id);if(!p||!p.alive||!input)return;
-    p.x=Math.max(18,Math.min(942,Number(input.x)||p.x));
-    p.y=Math.max(0,Math.min(600,Number(input.y)||p.y));
+    p.x=Math.max(18,Math.min(1782,Number(input.x)||p.x));
+    p.y=Math.max(0,Math.min(1200,Number(input.y)||p.y));
   });
   socket.on("leaveRoom",()=>leave(socket));
   socket.on("disconnect",()=>leave(socket));
