@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10182d">
+  <title>Arena Strike — Tag</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="top"><div class="logo"><span class="logo-mark">A</span><div><b>ARENA STRIKE</b><small>TAG MULTIPLAYER</small></div></div><div class="online"><i></i> SERVIDOR ONLINE</div></header>
+    <section id="lobby" class="panel lobby">
+      <div class="hero"><div class="eyebrow">CORRA • PULE • ESCAPE</div><h1>Não deixe<br>te pegarem<span>.</span></h1><p>Entre na arena com seus amigos. Quem for tocado vira o pegador!</p></div>
+      <div class="lobby-card"><label for="playerName">SEU NOME</label><input id="playerName" maxlength="14" placeholder="Digite seu apelido" value="Jogador">
+        <button id="createBtn" class="primary">CRIAR SALA <span>→</span></button>
+        <div class="or">OU ENTRE EM UMA SALA</div><div class="join-row"><input id="roomCode" maxlength="6" placeholder="CÓDIGO"><button id="joinBtn">ENTRAR</button></div>
+        <p id="lobbyError" class="error"></p>
+      </div>
+      <div class="how"><div>01 <b>Crie uma sala</b></div><div>02 <b>Chame seus amigos</b></div><div>03 <b>Fuja do pegador!</b></div></div>
+    </section>
+    <section id="game" class="panel game hidden">
+      <div class="game-head"><div><span class="eyebrow">SALA</span><strong id="codeLabel">------</strong><button id="copyBtn" class="copy">COPIAR CÓDIGO</button></div><div class="timer-wrap"><small>TEMPO</small><strong id="timer">01:30</strong></div><button id="leaveBtn" class="leave">SAIR</button></div>
+      <div class="game-layout"><div class="arena-wrap"><canvas id="arena" width="960" height="520"></canvas><div class="game-hint" id="gameHint">Aguardando jogadores...</div></div>
+      <aside class="side"><h3>JOGADORES <span id="playerCount">0/10</span></h3><ul id="players"></ul><button id="startBtn" class="primary">COMEÇAR PARTIDA →</button><p class="small">Compartilhe o código da sala com seus amigos.</p></aside></div>
+      <div class="controls"><span><kbd>A</kbd><kbd>D</kbd> ou <kbd>←</kbd><kbd>→</kbd> MOVER</span><span><kbd>ESPAÇO</kbd> PULAR</span><span>TOQUE EM ALGUÉM PARA PASSAR O PEGADOR</span></div>
+    </section>
+    <footer>ARENA STRIKE <span>•</span> FEITO PARA JOGAR COM AMIGOS</footer>
+  </main>
+  <div id="toast" class="toast"></div>
+  <script src="/socket.io/socket.io.js"></script><script src="game.js"></script>
+</body></html>
